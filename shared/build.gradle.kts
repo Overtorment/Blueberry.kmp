@@ -22,7 +22,11 @@ kotlin {
     
     android {
        namespace = "io.bluewallet.blueberry.shared"
-       compileSdk = libs.versions.android.compileSdk.get().toInt()
+       compileSdk {
+           version = release(libs.versions.android.compileSdk.get().toInt()) {
+               minorApiLevel = libs.versions.android.compileSdkMinor.get().toInt()
+           }
+       }
        minSdk = libs.versions.android.minSdk.get().toInt()
     
        compilerOptions {
@@ -59,6 +63,7 @@ kotlin {
             implementation(libs.bip324)
             implementation(libs.bip157)
             implementation(libs.bip158)
+            implementation(libs.echalote)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

@@ -10,3 +10,6 @@
 [submodule "vendor/bip157.kmp"]
 	path = vendor/bip157.kmp
 	url = https://github.com/GladosBlueWallet/bip157.kmp.git
+[submodule "vendor/echalote.kmp"]
+	path = vendor/echalote.kmp
+	url = https://github.com/GladosBlueWallet/echalote.kmp.git
