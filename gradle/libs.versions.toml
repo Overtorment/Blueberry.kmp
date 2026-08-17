@@ -1,6 +1,6 @@
 [versions]
-agp = "9.0.1"
-android-compileSdk = "36"
+agp = "9.1.0"
+android-compileSdk = "37"
 android-minSdk = "24"
 android-targetSdk = "36"
 androidx-activity = "1.13.0"
@@ -9,6 +9,10 @@ androidx-core = "1.19.0"
 androidx-espresso = "3.7.0"
 androidx-lifecycle = "2.11.0-beta01"
 androidx-testExt = "1.3.0"
+bitcoin-headers = "0.0.1"
+bip324 = "0.0.1"
+bip157 = "0.0.1"
+bip158 = "0.0.1"
 composeMultiplatform = "1.11.1"
 junit = "4.13.2"
 kotlin = "2.4.10"
@@ -16,6 +20,10 @@ kotlinx-coroutines = "1.11.0"
 material3 = "1.11.0-alpha07"
 
 [libraries]
+bitcoin-headers = { module = "io.bluewallet:bitcoin-headers", version.ref = "bitcoin-headers" }
+bip324 = { module = "io.bluewallet:bip324", version.ref = "bip324" }
+bip157 = { module = "io.bluewallet:bip157", version.ref = "bip157" }
+bip158 = { module = "io.bluewallet:bip158", version.ref = "bip158" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 kotlin-testJunit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
 junit = { module = "junit:junit", version.ref = "junit" }

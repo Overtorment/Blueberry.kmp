@@ -55,6 +55,10 @@ kotlin {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.androidx.lifecycle.viewmodelCompose)
             implementation(libs.androidx.lifecycle.runtimeCompose)
+            implementation(libs.bitcoin.headers)
+            implementation(libs.bip324)
+            implementation(libs.bip157)
+            implementation(libs.bip158)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

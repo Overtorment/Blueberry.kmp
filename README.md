@@ -12,6 +12,14 @@ This is a Kotlin Multiplatform project targeting Android, iOS, Desktop (JVM).
     Similarly, if you want to edit the Desktop (JVM) specific part, the [jvmMain](./shared/src/jvmMain/kotlin)
     folder is the appropriate location.
 
+### Clone
+
+This repo uses git submodules for the Bitcoin KMP libraries. After clone:
+
+```bash
+git submodule update --init
+```
+
 ### Running the apps
 
 Use the run configurations provided by the run widget in your IDE's toolbar. You can also use these commands and options:
