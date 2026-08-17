@@ -1,0 +1,33 @@
+insert:
+INSERT INTO headers (height, hash_internal_hex, header, cumulative_work)
+VALUES (?, ?, ?, ?);
+
+tip:
+SELECT * FROM headers ORDER BY height DESC LIMIT 1;
+
+count:
+SELECT COUNT(*) AS n FROM headers;
+
+minHeight:
+SELECT MIN(height) AS h FROM headers;
+
+get:
+SELECT * FROM headers WHERE height = ?;
+
+heightForHashInternal:
+SELECT height FROM headers WHERE hash_internal_hex = ? LIMIT 1;
+
+loadRange:
+SELECT * FROM headers WHERE height >= ? AND height <= ? ORDER BY height ASC;
+
+loadAll:
+SELECT * FROM headers ORDER BY height ASC;
+
+loadFrom:
+SELECT * FROM headers WHERE height >= ? ORDER BY height ASC;
+
+first:
+SELECT * FROM headers ORDER BY height ASC LIMIT 1;
+
+deleteAfter:
+DELETE FROM headers WHERE height > ?;

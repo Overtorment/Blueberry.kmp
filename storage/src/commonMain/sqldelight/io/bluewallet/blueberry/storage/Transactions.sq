@@ -1,0 +1,35 @@
+upsert:
+INSERT INTO transactions (
+  txid, height, tx_index, block_hash_internal_hex, tx, net_delta_sats
+) VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT(txid) DO UPDATE SET
+  height = excluded.height,
+  tx_index = excluded.tx_index,
+  block_hash_internal_hex = excluded.block_hash_internal_hex,
+  tx = excluded.tx,
+  net_delta_sats = excluded.net_delta_sats;
+
+list:
+SELECT txid, height, tx_index, block_hash_internal_hex, tx, net_delta_sats
+FROM transactions
+ORDER BY height DESC, tx_index DESC;
+
+count:
+SELECT COUNT(*) AS n FROM transactions;
+
+fingerprint:
+SELECT
+  COUNT(*) AS n,
+  COALESCE(SUM(net_delta_sats), 0) AS s,
+  (SELECT txid FROM transactions ORDER BY height DESC, tx_index DESC LIMIT 1) AS newest
+FROM transactions;
+
+minHeight:
+SELECT MIN(height) AS h FROM transactions;
+
+get:
+SELECT txid, height, tx_index, block_hash_internal_hex, tx, net_delta_sats
+FROM transactions WHERE txid = ?;
+
+setNetDelta:
+UPDATE transactions SET net_delta_sats = ? WHERE txid = ?;

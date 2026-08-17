@@ -1,0 +1,19 @@
+insert:
+INSERT INTO filter_headers (height, header) VALUES (?, ?);
+
+tip:
+SELECT * FROM filter_headers ORDER BY height DESC LIMIT 1;
+
+get:
+SELECT * FROM filter_headers WHERE height = ?;
+
+minHeight:
+SELECT MIN(height) AS h FROM filter_headers;
+
+loadRange:
+SELECT * FROM filter_headers
+WHERE height >= ? AND height <= ?
+ORDER BY height ASC;
+
+deleteFrom:
+DELETE FROM filter_headers WHERE height >= ?;

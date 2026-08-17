@@ -1,0 +1,12 @@
+get:
+SELECT name FROM utxo_names WHERE outpoint = ?;
+
+upsert:
+INSERT INTO utxo_names(outpoint, name) VALUES (?, ?)
+ON CONFLICT(outpoint) DO UPDATE SET name = excluded.name;
+
+delete:
+DELETE FROM utxo_names WHERE outpoint = ?;
+
+list:
+SELECT outpoint, name FROM utxo_names ORDER BY outpoint;

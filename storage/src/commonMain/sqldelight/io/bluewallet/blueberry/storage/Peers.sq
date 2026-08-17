@@ -1,0 +1,61 @@
+upsert:
+INSERT INTO peers (
+  host, port, services, alive, used_for_blocks,
+  last_probed_at, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(host, port) DO UPDATE SET
+  services = CASE
+    WHEN excluded.services != 0 THEN excluded.services
+    ELSE services
+  END,
+  updated_at = excluded.updated_at;
+
+list:
+SELECT * FROM peers ORDER BY host, port;
+
+count:
+SELECT COUNT(*) AS n FROM peers;
+
+listAlive:
+SELECT * FROM peers WHERE alive = 1 ORDER BY host, port;
+
+listAliveWithServices:
+SELECT * FROM peers
+WHERE alive = 1 AND (services & ?) != 0
+ORDER BY host, port
+LIMIT ?;
+
+listAliveWithServicesUnused:
+SELECT * FROM peers
+WHERE alive = 1
+  AND used_for_blocks = 0
+  AND (services & ?) != 0
+ORDER BY host, port
+LIMIT ?;
+
+listWithServices:
+SELECT * FROM peers
+WHERE (services & ?) != 0
+ORDER BY alive DESC,
+  CASE WHEN last_probed_at IS NULL THEN 0 ELSE 1 END,
+  last_probed_at ASC,
+  host, port
+LIMIT ?;
+
+listProbeQueue:
+SELECT * FROM peers
+ORDER BY
+  CASE WHEN last_probed_at IS NULL THEN 0 ELSE 1 END,
+  last_probed_at ASC,
+  CASE WHEN instr(host, ':') > 0 THEN 1 ELSE 0 END,
+  host, port
+LIMIT ?;
+
+markProbed:
+UPDATE peers SET last_probed_at = ?, updated_at = ? WHERE host = ? AND port = ?;
+
+markAlive:
+UPDATE peers SET alive = ?, updated_at = ? WHERE host = ? AND port = ?;
+
+markUsedForBlocks:
+UPDATE peers SET used_for_blocks = 1, updated_at = ? WHERE host = ? AND port = ?;

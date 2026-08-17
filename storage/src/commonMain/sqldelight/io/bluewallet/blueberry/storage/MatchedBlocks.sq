@@ -1,0 +1,19 @@
+insert:
+INSERT OR IGNORE INTO matched_blocks (height, block_hash_internal_hex) VALUES (?, ?);
+
+changes:
+SELECT changes();
+
+get:
+SELECT height, block_hash_internal_hex FROM matched_blocks WHERE height = ?;
+
+count:
+SELECT COUNT(*) AS n FROM matched_blocks;
+
+listNeedingDownload:
+SELECT m.height AS height, m.block_hash_internal_hex AS block_hash_internal_hex
+FROM matched_blocks m
+LEFT JOIN blocks b ON b.height = m.height
+WHERE b.height IS NULL
+ORDER BY m.height ASC
+LIMIT ?;

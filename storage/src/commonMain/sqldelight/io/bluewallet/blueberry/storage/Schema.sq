@@ -1,0 +1,74 @@
+CREATE TABLE peers (
+  host TEXT NOT NULL,
+  port INTEGER NOT NULL,
+  services INTEGER NOT NULL DEFAULT 0,
+  alive INTEGER NOT NULL DEFAULT 0,
+  used_for_blocks INTEGER NOT NULL DEFAULT 0,
+  last_probed_at INTEGER,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (host, port)
+);
+
+CREATE TABLE headers (
+  height INTEGER PRIMARY KEY,
+  hash_internal_hex TEXT NOT NULL,
+  header BLOB NOT NULL,
+  cumulative_work TEXT NOT NULL DEFAULT '0'
+);
+
+CREATE TABLE filter_headers (
+  height INTEGER PRIMARY KEY,
+  header BLOB NOT NULL
+);
+
+CREATE TABLE filters (
+  height INTEGER PRIMARY KEY,
+  block_hash_internal_hex TEXT NOT NULL,
+  filter BLOB NOT NULL
+);
+
+CREATE TABLE filters_unscanned (
+  height INTEGER PRIMARY KEY
+);
+
+CREATE TABLE matched_blocks (
+  height INTEGER PRIMARY KEY,
+  block_hash_internal_hex TEXT NOT NULL
+);
+
+CREATE TABLE blocks (
+  height INTEGER PRIMARY KEY,
+  block_hash_internal_hex TEXT NOT NULL,
+  block BLOB NOT NULL
+);
+
+CREATE TABLE parsed_blocks (
+  height INTEGER PRIMARY KEY
+);
+
+CREATE TABLE transactions (
+  txid TEXT PRIMARY KEY,
+  height INTEGER NOT NULL,
+  tx_index INTEGER NOT NULL,
+  block_hash_internal_hex TEXT NOT NULL,
+  tx BLOB NOT NULL,
+  net_delta_sats INTEGER NOT NULL
+);
+
+CREATE TABLE key_value (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
+CREATE TABLE utxo_names (
+  outpoint TEXT PRIMARY KEY,
+  name TEXT NOT NULL
+);
+
+CREATE INDEX headers_hash_internal_hex
+  ON headers(hash_internal_hex);
+CREATE INDEX filters_height_hash
+  ON filters(height, block_hash_internal_hex);
+CREATE INDEX peers_alive_used
+  ON peers(alive, used_for_blocks);

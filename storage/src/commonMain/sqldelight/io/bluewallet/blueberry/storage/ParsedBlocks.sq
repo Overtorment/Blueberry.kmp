@@ -1,0 +1,11 @@
+has:
+SELECT 1 AS ok FROM parsed_blocks WHERE height = ? LIMIT 1;
+
+mark:
+INSERT OR IGNORE INTO parsed_blocks (height) VALUES (?);
+
+count:
+SELECT COUNT(*) AS n FROM parsed_blocks;
+
+clearFrom:
+DELETE FROM parsed_blocks WHERE height >= ?;

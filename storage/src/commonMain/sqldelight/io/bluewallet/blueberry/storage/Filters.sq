@@ -1,0 +1,93 @@
+insert:
+INSERT INTO filters (height, block_hash_internal_hex, filter) VALUES (?, ?, ?);
+
+insertUnscanned:
+INSERT OR IGNORE INTO filters_unscanned (height) VALUES (?);
+
+deleteUnscannedOne:
+DELETE FROM filters_unscanned WHERE height = ?;
+
+deleteUnscannedRange:
+DELETE FROM filters_unscanned WHERE height >= ? AND height <= ?;
+
+listNeedingMatch:
+SELECT f.height AS height,
+       f.block_hash_internal_hex AS block_hash_internal_hex,
+       f.filter AS filter
+FROM filters_unscanned u
+INNER JOIN filters f ON f.height = u.height
+ORDER BY u.height ASC
+LIMIT ?;
+
+countFilters:
+SELECT COUNT(*) AS n FROM filters;
+
+countUnscanned:
+SELECT COUNT(*) AS n FROM filters_unscanned;
+
+hashAt:
+SELECT block_hash_internal_hex AS h FROM filters WHERE height = ?;
+
+countInRange:
+SELECT COUNT(*) AS n FROM filters WHERE height >= ? AND height <= ?;
+
+minHeight:
+SELECT MIN(height) AS h FROM filters;
+
+maxHeight:
+SELECT MAX(height) AS h FROM filters;
+
+has:
+SELECT 1 AS ok FROM filters WHERE height = ? LIMIT 1;
+
+get:
+SELECT height, block_hash_internal_hex, filter FROM filters WHERE height = ?;
+
+firstHashMismatch:
+SELECT f.height AS height
+FROM filters f
+INNER JOIN headers h ON h.height = f.height
+WHERE f.height >= ? AND f.height <= ?
+  AND f.block_hash_internal_hex != h.hash_internal_hex
+ORDER BY f.height ASC
+LIMIT 1;
+
+heightsInRange:
+SELECT height FROM filters WHERE height >= ? AND height <= ? ORDER BY height ASC;
+
+markUnscannedFrom:
+INSERT OR IGNORE INTO filters_unscanned (height)
+SELECT height FROM filters WHERE height >= ?;
+
+deleteUnscannedFrom:
+DELETE FROM filters_unscanned WHERE height >= ?;
+
+deleteFiltersFrom:
+DELETE FROM filters WHERE height >= ?;
+
+deleteFilterHeadersFrom:
+DELETE FROM filter_headers WHERE height >= ?;
+
+deleteFilterHeaderAt:
+DELETE FROM filter_headers WHERE height = ?;
+
+rewindFilterHeaders:
+DELETE FROM filter_headers WHERE height > ?;
+
+rewindUnscanned:
+DELETE FROM filters_unscanned WHERE height > ?;
+
+rewindFilters:
+DELETE FROM filters WHERE height > ?;
+
+rewindMatched:
+DELETE FROM matched_blocks WHERE height > ?;
+
+rewindBlocks:
+DELETE FROM blocks WHERE height > ?;
+
+rewindParsed:
+DELETE FROM parsed_blocks WHERE height > ?;
+
+rewindTransactions:
+DELETE FROM transactions WHERE height > ?;
