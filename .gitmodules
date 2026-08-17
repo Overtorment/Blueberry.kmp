@@ -1,0 +1,12 @@
+[submodule "vendor/bitcoin-headers.kmp"]
+	path = vendor/bitcoin-headers.kmp
+	url = https://github.com/GladosBlueWallet/bitcoin-headers.kmp.git
+[submodule "vendor/bip324.kmp"]
+	path = vendor/bip324.kmp
+	url = https://github.com/GladosBlueWallet/bip324.kmp.git
+[submodule "vendor/bip158.kmp"]
+	path = vendor/bip158.kmp
+	url = https://github.com/GladosBlueWallet/bip158.kmp.git
+[submodule "vendor/bip157.kmp"]
+	path = vendor/bip157.kmp
+	url = https://github.com/GladosBlueWallet/bip157.kmp.git
