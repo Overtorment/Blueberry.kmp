@@ -5,9 +5,52 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.SupportSQLiteOpenHelper
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
+import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import java.util.Properties
 
 internal actual fun openSqliteDriver(path: String): SqlDriver {
+    if (!isAndroidFrameworkSqliteAvailable()) {
+        return openJdbcSqliteDriver(path)
+    }
     return AndroidSqliteDriver(PathSqliteOpenHelper(path))
+}
+
+private val androidFrameworkSqliteAvailable: Boolean by lazy {
+    try {
+        SQLiteDatabase.create(null).close()
+        true
+    } catch (e: RuntimeException) {
+        if (e.message?.contains("not mocked") == true) false else throw e
+    }
+}
+
+private fun isAndroidFrameworkSqliteAvailable(): Boolean = androidFrameworkSqliteAvailable
+
+// JdbcSqliteDriver (org.xerial:sqlite-jdbc) is `compileOnly` in the Android app; it is present
+// only for host tests. If the Android framework SQLite is unavailable (mocked) and the JDBC
+// fallback class is also missing at runtime, fail with a clear message instead of a raw
+// NoClassDefFoundError.
+private fun openJdbcSqliteDriver(path: String): SqlDriver {
+    try {
+        if (path == ":memory:") {
+            val properties = Properties().apply {
+                setProperty("journal_mode", "WAL")
+                setProperty("synchronous", "NORMAL")
+                setProperty("wal_autocheckpoint", "10000")
+            }
+            return JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY, properties)
+        }
+        return JdbcSqliteDriver(
+            "jdbc:sqlite:$path?journal_mode=WAL&synchronous=NORMAL&wal_autocheckpoint=10000",
+        )
+    } catch (e: NoClassDefFoundError) {
+        throw IllegalStateException(
+            "Android framework SQLite is unavailable (mocked) and the JDBC fallback driver " +
+                "(org.xerial:sqlite-jdbc / JdbcSqliteDriver) is missing from the runtime " +
+                "classpath. JDBC is compileOnly for the Android app; add it only for host tests.",
+            e,
+        )
+    }
 }
 
 private class PathSqliteOpenHelper(

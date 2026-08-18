@@ -15,6 +15,8 @@ bitcoin-headers = "0.0.1"
 bip324 = "0.0.1"
 bip157 = "0.0.1"
 bip158 = "0.0.1"
+bitcoin-kmp = "0.31.0"
+secp256k1-kmp = "0.23.0"
 echalote = "0.0.1"
 composeMultiplatform = "1.11.1"
 junit = "4.13.2"
@@ -22,12 +24,16 @@ kotlin = "2.4.10"
 sqldelight = "2.3.2"
 kotlinx-coroutines = "1.11.0"
 material3 = "1.11.0-alpha07"
+sqlite-jdbc = "3.53.2.1"
 
 [libraries]
 bitcoin-headers = { module = "io.bluewallet:bitcoin-headers", version.ref = "bitcoin-headers" }
 bip324 = { module = "io.bluewallet:bip324", version.ref = "bip324" }
 bip157 = { module = "io.bluewallet:bip157", version.ref = "bip157" }
 bip158 = { module = "io.bluewallet:bip158", version.ref = "bip158" }
+bitcoin-kmp = { module = "fr.acinq.bitcoin:bitcoin-kmp", version.ref = "bitcoin-kmp" }
+secp256k1-jni-jvm = { module = "fr.acinq.secp256k1:secp256k1-kmp-jni-jvm", version.ref = "secp256k1-kmp" }
+secp256k1-jni-android = { module = "fr.acinq.secp256k1:secp256k1-kmp-jni-android", version.ref = "secp256k1-kmp" }
 echalote = { module = "io.bluewallet:echalote", version.ref = "echalote" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 kotlin-testJunit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
@@ -51,6 +57,7 @@ sqldelight-runtime = { module = "app.cash.sqldelight:runtime", version.ref = "sq
 sqldelight-android-driver = { module = "app.cash.sqldelight:android-driver", version.ref = "sqldelight" }
 sqldelight-native-driver = { module = "app.cash.sqldelight:native-driver", version.ref = "sqldelight" }
 sqldelight-sqlite-driver = { module = "app.cash.sqldelight:sqlite-driver", version.ref = "sqldelight" }
+sqlite-jdbc = { module = "org.xerial:sqlite-jdbc", version.ref = "sqlite-jdbc" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }

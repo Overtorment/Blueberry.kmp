@@ -53,6 +53,7 @@ kotlin {
         }
         commonMain.dependencies {
             implementation(project(":storage"))
+            implementation(project(":wallet"))
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.material3)
