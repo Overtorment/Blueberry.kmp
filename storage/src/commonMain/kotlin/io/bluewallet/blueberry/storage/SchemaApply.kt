@@ -23,7 +23,7 @@ internal fun queryPragmaValue(driver: SqlDriver, pragma: String): String {
         sql = "PRAGMA $pragma",
         mapper = { cursor ->
             QueryResult.Value(
-                if (cursor.next().value) cursor.getString(0)!! else error("PRAGMA $pragma returned no row"),
+                if (cursor.next().value) cursor.getString(0).orEmpty() else "",
             )
         },
         parameters = 0,

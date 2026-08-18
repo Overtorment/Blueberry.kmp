@@ -9,4 +9,9 @@ class SharedLogicDesktopTest {
     fun example() {
         assertEquals(3, 1 + 2)
     }
+
+    @Test
+    fun vendorLibraryStatus_storage_kv_is_ok() {
+        assertEquals("storage: kv ok", vendorLibraryStatus()[5])
+    }
 }
