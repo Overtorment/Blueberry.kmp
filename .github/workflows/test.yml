@@ -51,11 +51,7 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install Android API 37
-        run: |
-          sdkmanager "platforms;android-37"
-          if [ ! -d "$ANDROID_HOME/platforms/android-37.0" ] && [ -d "$ANDROID_HOME/platforms/android-37" ]; then
-            ln -s android-37 "$ANDROID_HOME/platforms/android-37.0"
-          fi
+        run: sdkmanager "platforms;android-37.0"
 
       - uses: actions/cache@v4
         with:
