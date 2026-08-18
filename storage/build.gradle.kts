@@ -7,7 +7,11 @@ plugins {
 }
 
 kotlin {
-    listOf(iosArm64(), iosSimulatorArm64()).forEach { }
+    listOf(iosArm64(), iosSimulatorArm64()).forEach { target ->
+        target.binaries.all {
+            linkerOpts("-lsqlite3")
+        }
+    }
     jvm()
     android {
         namespace = "io.bluewallet.blueberry.storage"
