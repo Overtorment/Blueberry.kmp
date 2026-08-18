@@ -15,7 +15,21 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: jvm
+            os: ubuntu-latest
+            gradle: :storage:jvmTest :wallet:jvmTest :shared:jvmTest
+          - name: androidHost
+            os: ubuntu-latest
+            gradle: :wallet:testAndroidHostTest :shared:testAndroidHostTest
+          - name: iosSimulator
+            os: macos-latest
+            gradle: :storage:iosSimulatorArm64Test :wallet:iosSimulatorArm64Test :shared:iosSimulatorArm64Test
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -48,11 +62,5 @@ jobs:
           path: ~/.konan
           key: ${{ runner.os }}-konan-${{ hashFiles('**/gradle/libs.versions.toml', '**/gradle-wrapper.properties') }}
 
-      - name: Run JVM and Android host tests
-        run: >
-          ./gradlew
-          :storage:jvmTest
-          :wallet:jvmTest
-          :wallet:testAndroidHostTest
-          :shared:jvmTest
-          --no-daemon
+      - name: Run ${{ matrix.name }} tests
+        run: ./gradlew ${{ matrix.gradle }} --no-daemon
