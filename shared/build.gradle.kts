@@ -57,6 +57,7 @@ kotlin {
             implementation(project(":storage"))
             implementation(project(":wallet"))
             implementation(project(":bus"))
+            implementation(project(":peers"))
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.material3)

@@ -28,6 +28,8 @@ fun SettingsScreen(
         Button(onClick = onClearStorage) {
             Text("Clear storage")
         }
+        Text("Self-diagnostics")
+        ClickMeContent()
         TextButton(onClick = onBack) {
             Text("Back")
         }

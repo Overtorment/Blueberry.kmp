@@ -1,0 +1,353 @@
+package io.bluewallet.blueberry.peers.modules
+
+import io.bluewallet.bip157.NODE_COMPACT_FILTERS
+import io.bluewallet.bip324.Networks
+import io.bluewallet.blueberry.bus.Event
+import io.bluewallet.blueberry.bus.ModuleStatus
+import io.bluewallet.blueberry.bus.ModuleStatusPayload
+import io.bluewallet.blueberry.bus.PeerSocketKind
+import io.bluewallet.blueberry.bus.PeersSocketsPayload
+import io.bluewallet.blueberry.bus.PeersUpdatedPayload
+import io.bluewallet.blueberry.peers.Config
+import io.bluewallet.blueberry.peers.currentTimeMillis
+import io.bluewallet.blueberry.peers.log
+import io.bluewallet.blueberry.peers.logError
+import io.bluewallet.blueberry.peers.net.MAINNET_DNS_SEEDS
+import io.bluewallet.blueberry.peers.net.PeerCandidate
+import io.bluewallet.blueberry.peers.net.PlatformNet
+import io.bluewallet.blueberry.peers.net.ProbeOptions
+import io.bluewallet.blueberry.peers.net.ProbeResult
+import io.bluewallet.blueberry.peers.net.probePeer
+import io.bluewallet.blueberry.peers.net.resolveSeedPeers
+import io.bluewallet.blueberry.storage.Peer
+import io.bluewallet.blueberry.storage.PeerWrite
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.yield
+import kotlin.concurrent.Volatile
+import kotlin.math.ceil
+
+/** Cap for `stop()` join: wait out in-flight SQLite, not blocking DNS/connect. */
+private const val STOP_JOIN_MS = 1_000L
+
+private class DiscoveryState {
+    @Volatile var stopped = true
+    @Volatile var paused = false
+    @Volatile var syncIdle = false
+}
+
+class PeersDiscoveryOptions(
+    val net: PlatformNet,
+    val resolveSeeds: (suspend () -> List<PeerCandidate>)? = null,
+    val probe: (suspend (String, Int) -> ProbeResult)? = null,
+    val concurrency: Int? = null,
+    val idleDelayMs: Long? = null,
+    val probeTimeoutMs: Long? = null,
+    val now: (() -> Long)? = null,
+    val minAliveCompactFilters: Int? = null,
+    val reseedIntervalMs: Long? = null,
+)
+
+@OptIn(ExperimentalCoroutinesApi::class)
+fun createPeersDiscoveryModule(
+    ctx: ModuleContext,
+    options: PeersDiscoveryOptions,
+): Module {
+    val port = Networks.mainnet.defaultPort
+    val resolveSeeds = options.resolveSeeds ?: {
+        resolveSeedPeers(MAINNET_DNS_SEEDS, port, options.net.dns)
+    }
+    val probeTimeoutMs = options.probeTimeoutMs ?: Config.peerProbeTimeoutMs
+    val probe = options.probe ?: { host, p ->
+        probePeer(host, p, ProbeOptions(timeoutMs = probeTimeoutMs, connect = options.net.connect))
+    }
+    val concurrency = options.concurrency ?: Config.peerConcurrency
+    val idleDelayMs = options.idleDelayMs ?: 500L
+    val now = options.now ?: { currentTimeMillis() }
+    val minAliveCompactFilters = options.minAliveCompactFilters ?: 16
+    val reseedIntervalMs = options.reseedIntervalMs ?: 60_000L
+
+    val state = DiscoveryState()
+    var unsubIdle: (() -> Unit)? = null
+    var unsubCatchup: (() -> Unit)? = null
+    var unsubPeers: (() -> Unit)? = null
+    var wake: (() -> Unit)? = null
+    var lastReseedAt = 0L
+    var dnsInFlight = false
+    val inflight = mutableSetOf<String>()
+    var loopJob: Job? = null
+    var scope: CoroutineScope? = null
+
+    fun kick() {
+        wake?.invoke()
+    }
+
+    fun refreshPause() {
+        val wantPause = state.syncIdle && ctx.db.peers.listAlive().isNotEmpty()
+        if (wantPause == state.paused) return
+        state.paused = wantPause
+        log("peers-discovery", if (state.paused) "pause" else "resume")
+        kick()
+    }
+
+    fun emitUpdated() {
+        ctx.bus.emit(Event.PeersUpdated, PeersUpdatedPayload(at = now()))
+    }
+
+    fun emitSockets() {
+        ctx.bus.emit(
+            Event.PeersSockets,
+            PeersSocketsPayload(at = now(), kind = PeerSocketKind.PROBE, open = inflight.size),
+        )
+    }
+
+    fun upsertCandidate(candidate: PeerCandidate) {
+        ctx.db.peers.upsert(
+            PeerWrite(
+                host = candidate.host,
+                port = candidate.port,
+                services = candidate.services,
+                alive = false,
+                usedForBlocks = false,
+                lastProbedAt = null,
+            ),
+        )
+    }
+
+    suspend fun waitForKick(ms: Long) {
+        if (state.stopped) return
+        val moduleScope = scope ?: return
+        val done = CompletableDeferred<Unit>()
+        var settled = false
+        lateinit var complete: () -> Unit
+        val timer = moduleScope.launch {
+            delay(ms)
+            complete()
+        }
+        complete = fun() {
+            if (settled) return
+            settled = true
+            timer.cancel()
+            if (wake === complete) wake = null
+            done.complete(Unit)
+        }
+        wake = complete
+        try {
+            done.await()
+        } catch (e: CancellationException) {
+            complete()
+            throw e
+        }
+    }
+
+    suspend fun pullSeeds() {
+        if (dnsInFlight) return
+        dnsInFlight = true
+        try {
+            val seeds = resolveSeeds()
+            if (state.stopped || state.paused) return
+            log("peers-discovery", "dns seeds=${seeds.size}")
+            for (candidate in seeds) upsertCandidate(candidate)
+            if (seeds.isNotEmpty()) {
+                emitUpdated()
+                kick()
+            }
+        } catch (err: Throwable) {
+            logError("peers-discovery", "dns", err)
+        } finally {
+            lastReseedAt = now()
+            dnsInFlight = false
+        }
+    }
+
+    suspend fun bootstrap() {
+        if (ctx.db.peers.listAlive().isNotEmpty()) return
+        pullSeeds()
+    }
+
+    fun aliveCompactFilterCount(): Int =
+        ctx.db.peers.listAliveWithServices(NODE_COMPACT_FILTERS.toULong(), minAliveCompactFilters).size
+
+    suspend fun maybeReseed() {
+        if (dnsInFlight) return
+        if (now() - lastReseedAt < reseedIntervalMs) return
+        if (aliveCompactFilterCount() >= minAliveCompactFilters) return
+        pullSeeds()
+    }
+
+    fun takeProbeBatch(limit: Int, inflightKeys: Set<String>): List<Pair<String, Int>> {
+        if (limit <= 0) return emptyList()
+        val picked = mutableListOf<Pair<String, Int>>()
+        val seen = inflightKeys.toMutableSet()
+        val t = now()
+        fun due(lastProbedAt: Long?) = lastProbedAt == null || t - lastProbedAt >= probeTimeoutMs
+        fun take(peers: List<Peer>, max: Int = limit) {
+            for (peer in peers) {
+                if (picked.size >= max) return
+                val key = "${peer.host}:${peer.port}"
+                if (key in seen) continue
+                seen.add(key)
+                picked.add(peer.host to peer.port)
+            }
+        }
+        if (aliveCompactFilterCount() < minAliveCompactFilters) {
+            val cfMax = if (limit < 2) limit else ceil(limit / 2.0).toInt()
+            take(
+                ctx.db.peers.listWithServices(
+                    NODE_COMPACT_FILTERS.toULong(),
+                    minAliveCompactFilters + concurrency + 32,
+                ).filter { !it.alive && due(it.lastProbedAt) },
+                cfMax,
+            )
+        }
+        if (picked.size < limit) {
+            take(
+                ctx.db.peers.listProbeQueue(concurrency + inflightKeys.size + 16)
+                    .filter { due(it.lastProbedAt) },
+            )
+        }
+        return picked
+    }
+
+    suspend fun runLoop() {
+        while (!state.stopped) {
+            if (state.paused) {
+                waitForKick(60_000)
+                continue
+            }
+            val moduleScope = scope ?: break
+            moduleScope.launch { runCatching { maybeReseed() } }
+            val inflightKeys = inflight.toSet()
+            val batch = takeProbeBatch(concurrency - inflightKeys.size, inflightKeys)
+            var spawned = 0
+            for (next in batch) {
+                if (state.stopped || state.paused) break
+                val key = "${next.first}:${next.second}"
+                inflight.add(key)
+                spawned++
+                moduleScope.launch {
+                    try {
+                        val result = probe(next.first, next.second)
+                        if (state.stopped) return@launch
+                        ctx.db.peers.markProbed(next.first, next.second, now())
+                        if (result is ProbeResult.Ok) {
+                            ctx.db.peers.upsert(
+                                PeerWrite(
+                                    host = next.first,
+                                    port = next.second,
+                                    services = result.services,
+                                    alive = true,
+                                    usedForBlocks = false,
+                                    lastProbedAt = now(),
+                                ),
+                            )
+                            for (p in result.peers) upsertCandidate(p)
+                            ctx.db.peers.markAlive(next.first, next.second, true)
+                        } else {
+                            val err = (result as ProbeResult.Err).error
+                            log("peers-discovery", "probe fail $key error=$err")
+                            ctx.db.peers.markAlive(next.first, next.second, false)
+                        }
+                        emitUpdated()
+                    } catch (err: CancellationException) {
+                        if (state.stopped) return@launch
+                        throw err
+                    } catch (err: Throwable) {
+                        if (state.stopped) return@launch
+                        logError("peers-discovery", "probe fail $key", err)
+                        ctx.db.peers.markProbed(next.first, next.second, now())
+                        ctx.db.peers.markAlive(next.first, next.second, false)
+                        emitUpdated()
+                    } finally {
+                        if (state.stopped) return@launch
+                        inflight.remove(key)
+                        emitSockets()
+                        kick()
+                    }
+                }
+            }
+            if (spawned > 0) emitSockets()
+            if (state.stopped) break
+            val inflightSize = inflight.size
+            if (inflightSize >= concurrency || spawned == 0) {
+                waitForKick(if (inflightSize > 0) probeTimeoutMs else idleDelayMs)
+            } else {
+                waitForKick(1)
+            }
+            yield()
+        }
+    }
+
+    return object : Module {
+        override val name: String = "peers-discovery"
+
+        override suspend fun start() {
+            if (!state.stopped) return
+            ctx.bus.emit(
+                Event.ModuleStatus,
+                ModuleStatusPayload(module = "peers-discovery", status = ModuleStatus.STARTING),
+            )
+            log("peers-discovery", "start")
+            state.stopped = false
+            val job = SupervisorJob()
+            loopJob = job
+            val serial = Dispatchers.Default.limitedParallelism(1)
+            val moduleScope = CoroutineScope(job + serial)
+            scope = moduleScope
+            unsubIdle = ctx.bus.on(Event.SyncIdle) {
+                state.syncIdle = true
+                refreshPause()
+            }
+            unsubCatchup = ctx.bus.on(Event.SyncCatchup) {
+                state.syncIdle = false
+                refreshPause()
+            }
+            unsubPeers = ctx.bus.on(Event.PeersUpdated) {
+                if (state.syncIdle) refreshPause()
+            }
+            moduleScope.launch { runCatching { bootstrap() } }
+            detachLoop(ctx, "peers-discovery", moduleScope.launch { runLoop() })
+            ctx.bus.emit(
+                Event.ModuleStatus,
+                ModuleStatusPayload(module = "peers-discovery", status = ModuleStatus.RUNNING),
+            )
+        }
+
+        override fun stop() {
+            if (state.stopped) return
+            state.stopped = true
+            log("peers-discovery", "stop")
+            kick()
+            val toCancel = loopJob
+            loopJob = null
+            scope = null
+            toCancel?.cancel()
+            if (toCancel != null) {
+                runBlocking { withTimeoutOrNull(STOP_JOIN_MS) { toCancel.join() } }
+            }
+            unsubIdle?.invoke()
+            unsubCatchup?.invoke()
+            unsubPeers?.invoke()
+            unsubIdle = null
+            unsubCatchup = null
+            unsubPeers = null
+            state.paused = false
+            state.syncIdle = false
+            inflight.clear()
+            emitSockets()
+            ctx.bus.emit(
+                Event.ModuleStatus,
+                ModuleStatusPayload(module = "peers-discovery", status = ModuleStatus.STOPPED),
+            )
+        }
+    }
+}
