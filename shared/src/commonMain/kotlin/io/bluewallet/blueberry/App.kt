@@ -91,6 +91,7 @@ fun App(databasePath: String) {
         when (val current = gate) {
             is OnboardingGate.Start -> PeersScreen(
                 store = checkNotNull(runtime).store,
+                headersStore = checkNotNull(runtime).headersStore,
                 onOpenSettings = { showSettings = true },
             )
             is OnboardingGate.ExitInvalid -> InvalidSecretScreen(current.detail)

@@ -13,7 +13,7 @@ kotlin {
     }
     jvm()
     android {
-        namespace = "io.bluewallet.blueberry.peers"
+        namespace = "io.bluewallet.blueberry.headers"
         compileSdk {
             version = release(libs.versions.android.compileSdk.get().toInt()) {
                 minorApiLevel = libs.versions.android.compileSdkMinor.get().toInt()
@@ -27,11 +27,12 @@ kotlin {
     }
     sourceSets {
         commonMain.dependencies {
+            api(project(":peers"))
             api(project(":storage"))
             api(project(":bus"))
-            api(libs.bip324)
+            implementation(project(":wallet"))
             api(libs.bitcoin.headers)
-            implementation(libs.bip157)
+            implementation(libs.bip324)
             implementation(libs.kotlinx.coroutines.core)
         }
         commonTest.dependencies {

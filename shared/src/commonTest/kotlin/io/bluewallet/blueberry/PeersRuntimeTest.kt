@@ -30,4 +30,41 @@ class PeersRuntimeTest {
         off()
         db.close()
     }
+
+    @Test
+    fun bindHeaderProgressEvents_hydrates_from_db_then_progress() {
+        val bus = createMessageBus()
+        val db = createSqliteDatabase(":memory:")
+        db.headers.append(
+            listOf(
+                io.bluewallet.blueberry.storage.HeaderWrite(
+                    height = 10,
+                    hashInternalHex = "aa".repeat(32),
+                    header = ByteArray(80),
+                    cumulativeWork = com.ionspin.kotlin.bignum.integer.BigInteger.fromInt(10),
+                ),
+                io.bluewallet.blueberry.storage.HeaderWrite(
+                    height = 11,
+                    hashInternalHex = "bb".repeat(32),
+                    header = ByteArray(80),
+                    cumulativeWork = com.ionspin.kotlin.bignum.integer.BigInteger.fromInt(11),
+                ),
+            ),
+        )
+        val store = createHeadersProgressStore()
+        val off = bindHeaderProgressEvents(bus, db, store)
+        hydrateHeaders(db, store)
+        assertEquals(1, store.get().downloaded)
+        assertEquals(1, store.get().total)
+        assertEquals(11, store.get().height)
+        bus.emit(
+            Event.HeadersProgress,
+            io.bluewallet.blueberry.bus.HeadersProgressPayload(3, 1, 500, 11),
+        )
+        assertEquals(1, store.get().downloaded)
+        assertEquals(500, store.get().total)
+        assertEquals(11, store.get().height)
+        off()
+        db.close()
+    }
 }
