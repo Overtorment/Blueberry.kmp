@@ -12,9 +12,17 @@ This is a Kotlin Multiplatform project targeting Android, iOS, Desktop (JVM).
     Similarly, if you want to edit the Desktop (JVM) specific part, the [jvmMain](./shared/src/jvmMain/kotlin)
     folder is the appropriate location.
 
+### Prerequisites
+
+- JDK 11+
+- Android SDK (set `ANDROID_HOME` / `ANDROID_SDK_ROOT`, or add `sdk.dir=...` to `local.properties`)
+- For a physical Android device: USB debugging enabled, device visible via `adb devices`
+
+The first Gradle build may download SDK components (for example Android SDK Platform 37) and can take several minutes.
+
 ### Clone
 
-This repo uses git submodules for the Bitcoin KMP libraries. After clone:
+This repo uses git submodules for the Bitcoin KMP libraries in `vendor/`. After clone, initialize them (the vendor directories are empty until you do):
 
 ```bash
 git submodule update --init
@@ -24,7 +32,13 @@ git submodule update --init
 
 Use the run configurations provided by the run widget in your IDE's toolbar. You can also use these commands and options:
 
-- Android app: `./gradlew :androidApp:assembleDebug`
+- Android app (build APK only): `./gradlew :androidApp:assembleDebug`
+- Android app (physical device over USB):
+  ```bash
+  adb devices   # confirm your device is listed
+  ./gradlew :androidApp:installDebug
+  adb shell am start -n io.bluewallet.blueberry/.MainActivity
+  ```
 - Desktop app:
   - Hot reload: `./gradlew :desktopApp:hotRun --auto`
   - Standard run: `./gradlew :desktopApp:run`
