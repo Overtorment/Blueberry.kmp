@@ -1,7 +1,9 @@
 package io.bluewallet.blueberry.boot
 
+import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.NSFileManager
 
+@OptIn(ExperimentalForeignApi::class)
 actual fun deleteSqliteDatabaseFiles(path: String) {
     val fm = NSFileManager.defaultManager
     listOf(path, "$path-wal", "$path-shm").forEach { file ->

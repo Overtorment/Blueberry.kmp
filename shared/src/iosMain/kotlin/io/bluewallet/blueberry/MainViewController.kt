@@ -2,6 +2,7 @@ package io.bluewallet.blueberry
 
 import androidx.compose.ui.window.ComposeUIViewController
 import io.bluewallet.blueberry.boot.blueberrySqlitePath
+import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.NSApplicationSupportDirectory
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSUserDomainMask
@@ -12,6 +13,7 @@ fun MainViewController() = iosDatabasePath().let { databasePath ->
     }
 }
 
+@OptIn(ExperimentalForeignApi::class)
 private fun iosDatabasePath(): String {
     val url = NSFileManager.defaultManager.URLForDirectory(
         directory = NSApplicationSupportDirectory,
