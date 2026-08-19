@@ -1,51 +1,84 @@
 package io.bluewallet.blueberry
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.safeContentPadding
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.tooling.preview.Preview
-import org.jetbrains.compose.resources.painterResource
+import io.bluewallet.blueberry.boot.OnboardingGate
+import io.bluewallet.blueberry.boot.deleteSqliteDatabaseFiles
+import io.bluewallet.blueberry.boot.inspectSyncFromYear
+import io.bluewallet.blueberry.boot.resolveOnboardingGate
+import io.bluewallet.blueberry.onboarding.DatabaseOpenErrorScreen
+import io.bluewallet.blueberry.onboarding.InvalidSecretScreen
+import io.bluewallet.blueberry.onboarding.OnboardingApp
+import io.bluewallet.blueberry.onboarding.persistCreatedWallet
+import io.bluewallet.blueberry.onboarding.persistImportedSecret
+import io.bluewallet.blueberry.onboarding.persistSyncYear
+import io.bluewallet.blueberry.storage.Database
+import io.bluewallet.blueberry.storage.createSqliteDatabase
+import io.bluewallet.blueberry.wallet.inspectWalletSecret
 
-import blueberry.shared.generated.resources.Res
-import blueberry.shared.generated.resources.compose_multiplatform
+private class OpenedDatabase(path: String) {
+    val result: Result<Database> = runCatching { createSqliteDatabase(path) }
+    fun close() {
+        result.getOrNull()?.close()
+    }
+}
 
 @Composable
-@Preview
-fun App() {
+fun App(databasePath: String) {
     MaterialTheme {
-        var showContent by remember { mutableStateOf(false) }
-        Column(
-            modifier = Modifier
-                .background(MaterialTheme.colorScheme.primaryContainer)
-                .safeContentPadding()
-                .fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Button(onClick = { showContent = !showContent }) {
-                Text("Click me!")
-            }
-            AnimatedVisibility(showContent) {
-                val lines = remember { vendorLibraryStatus() }
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Image(painterResource(Res.drawable.compose_multiplatform), null)
-                    lines.forEach { line ->
-                        Text(line)
-                    }
-                }
-            }
+        var session by remember { mutableStateOf(0) }
+        var showSettings by remember { mutableStateOf(false) }
+        val opened = remember(databasePath, session) { OpenedDatabase(databasePath) }
+        DisposableEffect(opened) {
+            onDispose { opened.close() }
+        }
+        val db = opened.result.getOrNull()
+        val openError = opened.result.exceptionOrNull()
+        if (openError != null) {
+            DatabaseOpenErrorScreen(openError.message ?: openError.toString())
+            return@MaterialTheme
+        }
+        checkNotNull(db)
+        var gate by remember(databasePath, session) {
+            mutableStateOf(
+                resolveOnboardingGate(inspectWalletSecret(db), inspectSyncFromYear(db)),
+            )
+        }
+        fun refreshGate() {
+            gate = resolveOnboardingGate(inspectWalletSecret(db), inspectSyncFromYear(db))
+        }
+        if (showSettings) {
+            SettingsScreen(
+                onClearStorage = {
+                    opened.close()
+                    deleteSqliteDatabaseFiles(databasePath)
+                    showSettings = false
+                    session += 1
+                },
+                onBack = { showSettings = false },
+            )
+            return@MaterialTheme
+        }
+        when (val current = gate) {
+            is OnboardingGate.Start -> ClickMeContent(onOpenSettings = { showSettings = true })
+            is OnboardingGate.ExitInvalid -> InvalidSecretScreen(current.detail)
+            is OnboardingGate.Onboard -> OnboardingApp(
+                startAtYearStep = current.startAtYearStep,
+                onFinished = { refreshGate() },
+                persistImportedSecret = { persistImportedSecret(db, it) },
+                persistCreatedWallet = { persistCreatedWallet(db, it) },
+                persistSyncYear = { persistSyncYear(db, it) },
+            )
         }
     }
 }
+
+@Preview
+@Composable
+fun AppPreview() = App(databasePath = ":memory:")
