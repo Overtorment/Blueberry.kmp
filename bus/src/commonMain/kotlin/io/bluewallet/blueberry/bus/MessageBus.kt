@@ -11,8 +11,7 @@ fun createMessageBus(): MessageBus {
         override fun <T> on(event: Event<T>, handler: (T) -> Unit): () -> Unit {
             while (true) {
                 val cur = listeners.load()
-                val set = cur[event].orEmpty() + handler
-                val next = cur + (event to set)
+                val next = cur + (event to (cur[event].orEmpty() + handler))
                 if (listeners.compareAndSet(cur, next)) break
             }
             return {
@@ -26,8 +25,8 @@ fun createMessageBus(): MessageBus {
         }
 
         override fun <T> emit(event: Event<T>, payload: T) {
-            val set = listeners.load()[event] ?: return
-            for (handler in set) {
+            val snapshot = listeners.load()[event] ?: return
+            for (handler in snapshot) {
                 try {
                     @Suppress("UNCHECKED_CAST")
                     (handler as (T) -> Unit)(payload)

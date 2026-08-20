@@ -151,6 +151,7 @@ sealed class Event<T>(val name: String) {
  *
  * `emit` calls handlers in the same turn. Handlers must be synchronous;
  * thrown errors are swallowed. `on` returns an unsubscribe function.
+ * `on` / `emit` / unsubscribe are safe to call from concurrent module loops.
  */
 interface MessageBus {
     fun <T> on(event: Event<T>, handler: (T) -> Unit): () -> Unit
