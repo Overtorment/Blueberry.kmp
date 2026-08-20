@@ -7,7 +7,9 @@ import io.bluewallet.blueberry.bus.ModuleStatus
 import io.bluewallet.blueberry.bus.ModuleStatusPayload
 import io.bluewallet.blueberry.bus.createMessageBus
 import io.bluewallet.blueberry.filters.modules.FiltersDownloadOptions
+import io.bluewallet.blueberry.filters.modules.FiltersMatchingOptions
 import io.bluewallet.blueberry.filters.modules.createFiltersDownloadModule
+import io.bluewallet.blueberry.filters.modules.createFiltersMatchingModule
 import io.bluewallet.blueberry.headers.consensusForYear
 import io.bluewallet.blueberry.headers.modules.ChainHeadersOptions
 import io.bluewallet.blueberry.headers.modules.createChainHeadersModule
@@ -17,7 +19,10 @@ import io.bluewallet.blueberry.peers.modules.PeersDiscoveryOptions
 import io.bluewallet.blueberry.peers.modules.createPeersDiscoveryModule
 import io.bluewallet.blueberry.peers.net.createPlatformNet
 import io.bluewallet.blueberry.storage.Database
+import io.bluewallet.blueberry.wallet.createWallet
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.concurrent.Volatile
 
 fun bindPeerSocketEvents(bus: MessageBus, db: Database, store: PeerSocketsStore): () -> Unit {
@@ -34,6 +39,7 @@ class PeersRuntime(private val db: Database) {
     val store: PeerSocketsStore = createPeerSocketsStore()
     val headersStore: HeadersProgressStore = createHeadersProgressStore()
     val filtersStore: FiltersProgressStore = createFiltersProgressStore()
+    val matchingStore: MatchingProgressStore = createMatchingProgressStore()
     private val net = createPlatformNet()
     private val discovery: Module = createPeersDiscoveryModule(
         ModuleContext(bus, db),
@@ -41,6 +47,7 @@ class PeersRuntime(private val db: Database) {
     )
     private var headers: Module? = null
     private var filters: Module? = null
+    private var matching: Module? = null
     private var unbind: (() -> Unit)? = null
     @Volatile private var alive = true
 
@@ -48,6 +55,7 @@ class PeersRuntime(private val db: Database) {
         hydratePeers(db, store)
         hydrateHeaders(db, headersStore)
         hydrateFilters(db, filtersStore)
+        hydrateMatching(db, matchingStore)
     }
 
     suspend fun start() {
@@ -55,10 +63,12 @@ class PeersRuntime(private val db: Database) {
         val unbindPeers = bindPeerSocketEvents(bus, db, store)
         val unbindHeaders = bindHeaderProgressEvents(bus, db, headersStore)
         val unbindFilters = bindFilterProgressEvents(bus, db, filtersStore)
+        val unbindMatching = bindMatchingProgressEvents(bus, db, matchingStore)
         unbind = {
             unbindPeers()
             unbindHeaders()
             unbindFilters()
+            unbindMatching()
         }
         if (!alive) {
             unbind?.invoke()
@@ -68,6 +78,7 @@ class PeersRuntime(private val db: Database) {
         hydratePeers(db, store)
         hydrateHeaders(db, headersStore)
         hydrateFilters(db, filtersStore)
+        hydrateMatching(db, matchingStore)
         if (!alive) {
             unbind?.invoke()
             unbind = null
@@ -128,7 +139,29 @@ class PeersRuntime(private val db: Database) {
                 ),
             )
         }
+        try {
+            val matchingModule = createFiltersMatchingModule(
+                ModuleContext(bus, db),
+                FiltersMatchingOptions(
+                    wallet = withContext(Dispatchers.Default) { createWallet(db) },
+                ),
+            )
+            matching = matchingModule
+            matchingModule.start()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            bus.emit(
+                Event.ModuleStatus,
+                ModuleStatusPayload(
+                    module = "filters-matching",
+                    status = ModuleStatus.ERROR,
+                    detail = e.message ?: e.toString(),
+                ),
+            )
+        }
         if (!alive) {
+            matching?.stop()
             filters?.stop()
             headers?.stop()
             discovery.stop()
@@ -137,6 +170,8 @@ class PeersRuntime(private val db: Database) {
 
     fun stop() {
         alive = false
+        matching?.stop()
+        matching = null
         filters?.stop()
         filters = null
         headers?.stop()

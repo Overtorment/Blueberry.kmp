@@ -22,11 +22,13 @@ fun PeersScreen(
     store: PeerSocketsStore,
     headersStore: HeadersProgressStore,
     filtersStore: FiltersProgressStore,
+    matchingStore: MatchingProgressStore,
     onOpenSettings: () -> Unit,
 ) {
     var counts by remember { mutableStateOf(store.get()) }
     var headers by remember { mutableStateOf(headersStore.get()) }
     var filters by remember { mutableStateOf(filtersStore.get()) }
+    var matching by remember { mutableStateOf(matchingStore.get()) }
     val uiScope = rememberCoroutineScope()
     DisposableEffect(store) {
         val off = store.subscribe {
@@ -43,6 +45,12 @@ fun PeersScreen(
     DisposableEffect(filtersStore) {
         val off = filtersStore.subscribe {
             uiScope.launch { filters = filtersStore.get() }
+        }
+        onDispose { off() }
+    }
+    DisposableEffect(matchingStore) {
+        val off = matchingStore.subscribe {
+            uiScope.launch { matching = matchingStore.get() }
         }
         onDispose { off() }
     }
@@ -64,6 +72,16 @@ fun PeersScreen(
         Text("${filters.downloaded}/${filters.total}")
         if (filters.percent < 100) {
             Text("ETA ${formatEta(filters.etaMs)}")
+        }
+        Text("Filters match")
+        Text(progressBar(matching.percent, 10))
+        Text("${matching.scanned}/${matching.total}")
+        if (matching.percent < 100) {
+            val eta =
+                if (matching.etaMs != null) formatEta(matching.etaMs)
+                else if (matching.total > 0 && matching.scanned < matching.total) "…"
+                else formatEta(null)
+            Text("ETA $eta")
         }
         Button(onClick = onOpenSettings) { Text("Settings") }
     }

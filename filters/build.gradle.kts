@@ -32,6 +32,7 @@ kotlin {
             api(project(":bus"))
             implementation(project(":wallet"))
             api(libs.bip157)
+            implementation(libs.bip158)
             implementation(libs.bip324)
             implementation(libs.kotlinx.coroutines.core)
         }
@@ -42,6 +43,7 @@ kotlin {
             implementation(libs.bitcoin.headers)
         }
         getByName("androidHostTest").dependencies {
+            implementation(libs.secp256k1.jni.jvm)
             implementation(libs.sqldelight.sqlite.driver)
             implementation(libs.sqlite.jdbc)
         }

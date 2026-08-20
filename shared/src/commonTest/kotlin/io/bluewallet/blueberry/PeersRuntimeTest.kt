@@ -100,4 +100,39 @@ class PeersRuntimeTest {
         off()
         db.close()
     }
+
+    @Test
+    fun bindMatchingProgressEvents_hydrates_from_db_then_progress() {
+        val bus = createMessageBus()
+        val db = createSqliteDatabase(":memory:")
+        db.filters.append(
+            listOf(
+                io.bluewallet.blueberry.storage.FilterRecord(
+                    height = 1,
+                    blockHashInternalHex = "11".repeat(32),
+                    filter = byteArrayOf(0xaa.toByte()),
+                ),
+                io.bluewallet.blueberry.storage.FilterRecord(
+                    height = 2,
+                    blockHashInternalHex = "22".repeat(32),
+                    filter = byteArrayOf(0xbb.toByte()),
+                ),
+            ),
+        )
+        db.filters.markScanned(listOf(1))
+        val store = createMatchingProgressStore()
+        val off = bindMatchingProgressEvents(bus, db, store)
+        hydrateMatching(db, store)
+        assertEquals(1, store.get().scanned)
+        assertEquals(2, store.get().total)
+        db.filters.markScanned(listOf(2))
+        bus.emit(
+            Event.MatchingProgress,
+            io.bluewallet.blueberry.bus.MatchingProgressPayload(3, 0, 0),
+        )
+        assertEquals(2, store.get().scanned)
+        assertEquals(2, store.get().total)
+        off()
+        db.close()
+    }
 }
