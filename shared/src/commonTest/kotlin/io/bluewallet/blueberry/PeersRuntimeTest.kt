@@ -67,4 +67,37 @@ class PeersRuntimeTest {
         off()
         db.close()
     }
+
+    @Test
+    fun bindFilterProgressEvents_hydrates_from_db_then_progress() {
+        val bus = createMessageBus()
+        val db = createSqliteDatabase(":memory:")
+        db.filters.append(
+            listOf(
+                io.bluewallet.blueberry.storage.FilterRecord(
+                    height = 1,
+                    blockHashInternalHex = "11".repeat(32),
+                    filter = byteArrayOf(0xaa.toByte()),
+                ),
+                io.bluewallet.blueberry.storage.FilterRecord(
+                    height = 2,
+                    blockHashInternalHex = "22".repeat(32),
+                    filter = byteArrayOf(0xbb.toByte()),
+                ),
+            ),
+        )
+        val store = createFiltersProgressStore()
+        val off = bindFilterProgressEvents(bus, db, store)
+        hydrateFilters(db, store)
+        assertEquals(2, store.get().downloaded)
+        assertEquals(2, store.get().total)
+        bus.emit(
+            Event.FiltersProgress,
+            io.bluewallet.blueberry.bus.FiltersProgressPayload(3, 1, 500),
+        )
+        assertEquals(2, store.get().downloaded)
+        assertEquals(500, store.get().total)
+        off()
+        db.close()
+    }
 }

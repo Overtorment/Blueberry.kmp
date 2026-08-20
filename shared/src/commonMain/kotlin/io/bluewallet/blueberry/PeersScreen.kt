@@ -21,10 +21,12 @@ import kotlinx.coroutines.launch
 fun PeersScreen(
     store: PeerSocketsStore,
     headersStore: HeadersProgressStore,
+    filtersStore: FiltersProgressStore,
     onOpenSettings: () -> Unit,
 ) {
     var counts by remember { mutableStateOf(store.get()) }
     var headers by remember { mutableStateOf(headersStore.get()) }
+    var filters by remember { mutableStateOf(filtersStore.get()) }
     val uiScope = rememberCoroutineScope()
     DisposableEffect(store) {
         val off = store.subscribe {
@@ -35,6 +37,12 @@ fun PeersScreen(
     DisposableEffect(headersStore) {
         val off = headersStore.subscribe {
             uiScope.launch { headers = headersStore.get() }
+        }
+        onDispose { off() }
+    }
+    DisposableEffect(filtersStore) {
+        val off = filtersStore.subscribe {
+            uiScope.launch { filters = filtersStore.get() }
         }
         onDispose { off() }
     }
@@ -50,6 +58,12 @@ fun PeersScreen(
         Text("${headers.height} tip")
         if (headers.percent < 100) {
             Text("ETA ${formatEta(headers.etaMs)}")
+        }
+        Text("Filters DL")
+        Text(progressBar(filters.percent, 10))
+        Text("${filters.downloaded}/${filters.total}")
+        if (filters.percent < 100) {
+            Text("ETA ${formatEta(filters.etaMs)}")
         }
         Button(onClick = onOpenSettings) { Text("Settings") }
     }

@@ -6,6 +6,8 @@ import io.bluewallet.blueberry.bus.MessageBus
 import io.bluewallet.blueberry.bus.ModuleStatus
 import io.bluewallet.blueberry.bus.ModuleStatusPayload
 import io.bluewallet.blueberry.bus.createMessageBus
+import io.bluewallet.blueberry.filters.modules.FiltersDownloadOptions
+import io.bluewallet.blueberry.filters.modules.createFiltersDownloadModule
 import io.bluewallet.blueberry.headers.consensusForYear
 import io.bluewallet.blueberry.headers.modules.ChainHeadersOptions
 import io.bluewallet.blueberry.headers.modules.createChainHeadersModule
@@ -31,27 +33,32 @@ class PeersRuntime(private val db: Database) {
     val bus: MessageBus = createMessageBus()
     val store: PeerSocketsStore = createPeerSocketsStore()
     val headersStore: HeadersProgressStore = createHeadersProgressStore()
+    val filtersStore: FiltersProgressStore = createFiltersProgressStore()
     private val net = createPlatformNet()
     private val discovery: Module = createPeersDiscoveryModule(
         ModuleContext(bus, db),
         PeersDiscoveryOptions(net = net),
     )
     private var headers: Module? = null
+    private var filters: Module? = null
     private var unbind: (() -> Unit)? = null
     @Volatile private var alive = true
 
     init {
         hydratePeers(db, store)
         hydrateHeaders(db, headersStore)
+        hydrateFilters(db, filtersStore)
     }
 
     suspend fun start() {
         if (!alive) return
         val unbindPeers = bindPeerSocketEvents(bus, db, store)
         val unbindHeaders = bindHeaderProgressEvents(bus, db, headersStore)
+        val unbindFilters = bindFilterProgressEvents(bus, db, filtersStore)
         unbind = {
             unbindPeers()
             unbindHeaders()
+            unbindFilters()
         }
         if (!alive) {
             unbind?.invoke()
@@ -60,6 +67,7 @@ class PeersRuntime(private val db: Database) {
         }
         hydratePeers(db, store)
         hydrateHeaders(db, headersStore)
+        hydrateFilters(db, filtersStore)
         if (!alive) {
             unbind?.invoke()
             unbind = null
@@ -101,7 +109,27 @@ class PeersRuntime(private val db: Database) {
                 ),
             )
         }
+        try {
+            val filtersModule = createFiltersDownloadModule(
+                ModuleContext(bus, db),
+                FiltersDownloadOptions(net = net),
+            )
+            filters = filtersModule
+            filtersModule.start()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            bus.emit(
+                Event.ModuleStatus,
+                ModuleStatusPayload(
+                    module = "filters-download",
+                    status = ModuleStatus.ERROR,
+                    detail = e.message ?: e.toString(),
+                ),
+            )
+        }
         if (!alive) {
+            filters?.stop()
             headers?.stop()
             discovery.stop()
         }
@@ -109,6 +137,8 @@ class PeersRuntime(private val db: Database) {
 
     fun stop() {
         alive = false
+        filters?.stop()
+        filters = null
         headers?.stop()
         headers = null
         discovery.stop()

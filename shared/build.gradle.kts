@@ -59,6 +59,7 @@ kotlin {
             implementation(project(":bus"))
             implementation(project(":peers"))
             implementation(project(":headers"))
+            implementation(project(":filters"))
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.material3)
