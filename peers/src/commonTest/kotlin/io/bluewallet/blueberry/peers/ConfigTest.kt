@@ -14,5 +14,8 @@ class ConfigTest {
         assertEquals(10, Config.filterConcurrency)
         assertEquals(2000, Config.filterHeaderBatchSize)
         assertEquals(100, Config.filterBatchSize)
+        assertEquals(3_000L, Config.blockConnectTimeoutMs)
+        assertEquals(30_000L, Config.blockSyncTimeoutMs)
+        assertEquals(10, Config.blockConcurrency)
     }
 }

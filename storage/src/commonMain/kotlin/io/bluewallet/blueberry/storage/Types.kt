@@ -139,6 +139,7 @@ interface BlocksRepository {
     fun has(height: Int): Boolean
     fun get(height: Int): DownloadedBlock?
     fun insert(block: DownloadedBlock): Boolean
+    fun insertIfMatched(block: DownloadedBlock): Boolean
     fun listNeedingParse(limit: Int): List<DownloadedBlock>
 }
 

@@ -1,6 +1,14 @@
 insert:
 INSERT OR IGNORE INTO blocks (height, block_hash_internal_hex, block) VALUES (?, ?, ?);
 
+insertIfMatched:
+INSERT OR IGNORE INTO blocks (height, block_hash_internal_hex, block)
+SELECT ?, ?, ?
+WHERE EXISTS (
+  SELECT 1 FROM matched_blocks
+  WHERE height = ? AND block_hash_internal_hex = ?
+);
+
 changes:
 SELECT changes();
 

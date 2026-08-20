@@ -6,6 +6,8 @@ import io.bluewallet.blueberry.bus.MessageBus
 import io.bluewallet.blueberry.bus.ModuleStatus
 import io.bluewallet.blueberry.bus.ModuleStatusPayload
 import io.bluewallet.blueberry.bus.createMessageBus
+import io.bluewallet.blueberry.blocks.modules.BlocksDownloadOptions
+import io.bluewallet.blueberry.blocks.modules.createBlocksDownloadModule
 import io.bluewallet.blueberry.filters.modules.FiltersDownloadOptions
 import io.bluewallet.blueberry.filters.modules.FiltersMatchingOptions
 import io.bluewallet.blueberry.filters.modules.createFiltersDownloadModule
@@ -18,10 +20,14 @@ import io.bluewallet.blueberry.peers.modules.ModuleContext
 import io.bluewallet.blueberry.peers.modules.PeersDiscoveryOptions
 import io.bluewallet.blueberry.peers.modules.createPeersDiscoveryModule
 import io.bluewallet.blueberry.peers.net.createPlatformNet
+import io.bluewallet.blueberry.sync.modules.createSyncIdleModule
 import io.bluewallet.blueberry.storage.Database
 import io.bluewallet.blueberry.wallet.createWallet
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.concurrent.Volatile
 
@@ -40,6 +46,7 @@ class PeersRuntime(private val db: Database) {
     val headersStore: HeadersProgressStore = createHeadersProgressStore()
     val filtersStore: FiltersProgressStore = createFiltersProgressStore()
     val matchingStore: MatchingProgressStore = createMatchingProgressStore()
+    val blocksStore: BlocksMatchedStore = createBlocksMatchedStore()
     private val net = createPlatformNet()
     private val discovery: Module = createPeersDiscoveryModule(
         ModuleContext(bus, db),
@@ -48,27 +55,47 @@ class PeersRuntime(private val db: Database) {
     private var headers: Module? = null
     private var filters: Module? = null
     private var matching: Module? = null
+    private var blocks: Module? = null
+    private var syncIdle: Module? = null
     private var unbind: (() -> Unit)? = null
     @Volatile private var alive = true
+    private var started = false
+    private val lifecycleMutex = Mutex()
 
     init {
         hydratePeers(db, store)
         hydrateHeaders(db, headersStore)
         hydrateFilters(db, filtersStore)
         hydrateMatching(db, matchingStore)
+        hydrateBlocks(db, blocksStore)
     }
 
     suspend fun start() {
+        lifecycleMutex.withLock {
+            if (!alive || started) return@withLock
+            started = true
+            try {
+                startLocked()
+            } catch (e: CancellationException) {
+                stopLocked()
+                throw e
+            }
+        }
+    }
+
+    private suspend fun startLocked() {
         if (!alive) return
         val unbindPeers = bindPeerSocketEvents(bus, db, store)
         val unbindHeaders = bindHeaderProgressEvents(bus, db, headersStore)
         val unbindFilters = bindFilterProgressEvents(bus, db, filtersStore)
         val unbindMatching = bindMatchingProgressEvents(bus, db, matchingStore)
+        val unbindBlocks = bindBlocksProgressEvents(bus, db, blocksStore)
         unbind = {
             unbindPeers()
             unbindHeaders()
             unbindFilters()
             unbindMatching()
+            unbindBlocks()
         }
         if (!alive) {
             unbind?.invoke()
@@ -79,10 +106,46 @@ class PeersRuntime(private val db: Database) {
         hydrateHeaders(db, headersStore)
         hydrateFilters(db, filtersStore)
         hydrateMatching(db, matchingStore)
+        hydrateBlocks(db, blocksStore)
         if (!alive) {
             unbind?.invoke()
             unbind = null
             return
+        }
+        try {
+            val blocksModule = createBlocksDownloadModule(
+                ModuleContext(bus, db),
+                BlocksDownloadOptions(net = net),
+            )
+            blocks = blocksModule
+            blocksModule.start()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            bus.emit(
+                Event.ModuleStatus,
+                ModuleStatusPayload(
+                    module = "blocks-download",
+                    status = ModuleStatus.ERROR,
+                    detail = e.message ?: e.toString(),
+                ),
+            )
+        }
+        try {
+            val idleModule = createSyncIdleModule(ModuleContext(bus, db))
+            syncIdle = idleModule
+            idleModule.start()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            bus.emit(
+                Event.ModuleStatus,
+                ModuleStatusPayload(
+                    module = "sync-idle",
+                    status = ModuleStatus.ERROR,
+                    detail = e.message ?: e.toString(),
+                ),
+            )
         }
         try {
             discovery.start()
@@ -162,6 +225,8 @@ class PeersRuntime(private val db: Database) {
         }
         if (!alive) {
             matching?.stop()
+            syncIdle?.stop()
+            blocks?.stop()
             filters?.stop()
             headers?.stop()
             discovery.stop()
@@ -169,9 +234,20 @@ class PeersRuntime(private val db: Database) {
     }
 
     fun stop() {
+        runBlocking {
+            lifecycleMutex.withLock { stopLocked() }
+        }
+    }
+
+    private fun stopLocked() {
         alive = false
+        started = false
         matching?.stop()
         matching = null
+        syncIdle?.stop()
+        syncIdle = null
+        blocks?.stop()
+        blocks = null
         filters?.stop()
         filters = null
         headers?.stop()

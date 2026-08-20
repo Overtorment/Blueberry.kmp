@@ -433,6 +433,21 @@ internal class SqliteDatabase(
             return inserted
         }
 
+        override fun insertIfMatched(block: DownloadedBlock): Boolean {
+            var inserted = false
+            transaction {
+                storageDb.blocksQueries.insertIfMatched(
+                    height = block.height.toLong(),
+                    block_hash_internal_hex = block.blockHashInternalHex,
+                    block = block.block,
+                    height_ = block.height.toLong(),
+                    block_hash_internal_hex_ = block.blockHashInternalHex,
+                )
+                inserted = storageDb.blocksQueries.changes().executeAsOne() > 0L
+            }
+            return inserted
+        }
+
         override fun listNeedingParse(limit: Int): List<DownloadedBlock> {
             if (limit <= 0) return emptyList()
             return storageDb.blocksQueries.listNeedingParse(limit.toLong())

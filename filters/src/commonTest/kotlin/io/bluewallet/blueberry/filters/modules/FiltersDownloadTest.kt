@@ -610,7 +610,7 @@ class FiltersDownloadTest {
                 }
             }
         }
-        val lines = mutableListOf<String>()
+        val sawCombinedError = CompletableDeferred<Unit>()
         var opens = 0
         val mod = createFiltersDownloadModule(
             ModuleContext(bus, db),
@@ -620,7 +620,11 @@ class FiltersDownloadTest {
                 filterBatchSize = 10,
                 persistBatchSize = 3,
                 coolMs = 1,
-                log = { lines.add(it) },
+                log = {
+                    if (it.contains("error=unexpected EOF") && it.contains("persistenceError=disk full")) {
+                        sawCombinedError.complete(Unit)
+                    }
+                },
                 openSession = { _, _, _ ->
                     opens++
                     val base = ScriptedSession(fixture)
@@ -641,7 +645,7 @@ class FiltersDownloadTest {
             ),
         )
         mod.start()
-        waitFor { lines.any { it.contains("error=unexpected EOF") && it.contains("persistenceError=disk full") } }
+        sawCombinedError.await()
         mod.stop()
         inner.close()
     }

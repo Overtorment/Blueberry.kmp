@@ -1,16 +1,40 @@
 package io.bluewallet.blueberry
 
 import io.bluewallet.blueberry.bus.Event
+import io.bluewallet.blueberry.bus.ModuleStatus
 import io.bluewallet.blueberry.bus.PeerSocketKind
 import io.bluewallet.blueberry.bus.PeersSocketsPayload
 import io.bluewallet.blueberry.bus.PeersUpdatedPayload
 import io.bluewallet.blueberry.bus.createMessageBus
 import io.bluewallet.blueberry.storage.PeerWrite
 import io.bluewallet.blueberry.storage.createSqliteDatabase
+import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class PeersRuntimeTest {
+    @Test
+    fun start_is_idempotent() = runBlocking {
+        val db = createSqliteDatabase(":memory:")
+        val runtime = PeersRuntime(db)
+        var blockStarts = 0
+        val starts = mutableListOf<String>()
+        runtime.bus.on(Event.ModuleStatus) {
+            if (it.status != ModuleStatus.STARTING) return@on
+            starts.add(it.module)
+            if (it.module == "blocks-download") blockStarts++
+        }
+
+        runtime.start()
+        runtime.start()
+
+        assertEquals(1, blockStarts)
+        assertTrue(starts.indexOf("sync-idle") < starts.indexOf("peers-discovery"))
+        runtime.stop()
+        db.close()
+    }
+
     @Test
     fun bindPeerSocketEvents_hydrates_and_applies() {
         val bus = createMessageBus()
@@ -132,6 +156,31 @@ class PeersRuntimeTest {
         )
         assertEquals(2, store.get().scanned)
         assertEquals(2, store.get().total)
+        off()
+        db.close()
+    }
+
+    @Test
+    fun bindBlocksProgressEvents_hydrates_from_db_then_progress() {
+        val bus = createMessageBus()
+        val db = createSqliteDatabase(":memory:")
+        db.matchedBlocks.insert(
+            io.bluewallet.blueberry.storage.MatchedBlock(1, "11".repeat(32)),
+        )
+        val store = createBlocksMatchedStore()
+        val off = bindBlocksProgressEvents(bus, db, store)
+        hydrateBlocks(db, store)
+        assertEquals(0, store.get().downloaded)
+        assertEquals(1, store.get().matched)
+        db.blocks.insert(
+            io.bluewallet.blueberry.storage.DownloadedBlock(1, "11".repeat(32), byteArrayOf(1)),
+        )
+        bus.emit(
+            Event.BlocksProgress,
+            io.bluewallet.blueberry.bus.BlocksProgressPayload(3, 0, 0),
+        )
+        assertEquals(1, store.get().downloaded)
+        assertEquals(1, store.get().matched)
         off()
         db.close()
     }

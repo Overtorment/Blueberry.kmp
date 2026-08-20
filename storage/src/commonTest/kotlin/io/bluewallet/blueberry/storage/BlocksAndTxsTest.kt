@@ -64,6 +64,27 @@ class BlocksAndTxsTest {
     }
 
     @Test
+    fun block_insert_if_matched_rejects_stale_hash() {
+        val db = createSqliteDatabase(":memory:")
+        val canonicalHash = "aa".repeat(32)
+        val staleHash = "bb".repeat(32)
+        db.matchedBlocks.insert(MatchedBlock(10, canonicalHash))
+
+        assertFalse(
+            db.blocks.insertIfMatched(
+                DownloadedBlock(10, staleHash, byteArrayOf(0x11)),
+            ),
+        )
+        assertTrue(
+            db.blocks.insertIfMatched(
+                DownloadedBlock(10, canonicalHash, byteArrayOf(0x22)),
+            ),
+        )
+        assertEquals(canonicalHash, db.blocks.get(10)?.blockHashInternalHex)
+        db.close()
+    }
+
+    @Test
     fun parse_queue_idempotent_mark_upsert_replace_newest_first_list() {
         val db = createSqliteDatabase(":memory:")
         db.blocks.insert(DownloadedBlock(10, "aa".repeat(32), byteArrayOf(0x11)))

@@ -60,6 +60,8 @@ kotlin {
             implementation(project(":peers"))
             implementation(project(":headers"))
             implementation(project(":filters"))
+            implementation(project(":blocks"))
+            implementation(project(":sync"))
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.material3)

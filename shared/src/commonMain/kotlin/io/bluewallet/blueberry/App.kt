@@ -67,7 +67,7 @@ fun App(databasePath: String) {
         }
         val scope = rememberCoroutineScope()
         DisposableEffect(runtime) {
-            val job = scope.launch { runtime?.start() }
+            val job = scope.launch(Dispatchers.Default) { runtime?.start() }
             onDispose {
                 job.cancel()
                 runtime?.stop()
@@ -94,6 +94,7 @@ fun App(databasePath: String) {
                 headersStore = checkNotNull(runtime).headersStore,
                 filtersStore = checkNotNull(runtime).filtersStore,
                 matchingStore = checkNotNull(runtime).matchingStore,
+                blocksStore = checkNotNull(runtime).blocksStore,
                 onOpenSettings = { showSettings = true },
             )
             is OnboardingGate.ExitInvalid -> InvalidSecretScreen(current.detail)

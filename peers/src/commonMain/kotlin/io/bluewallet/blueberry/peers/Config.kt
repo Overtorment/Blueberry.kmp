@@ -9,4 +9,7 @@ object Config {
     const val filterConcurrency: Int = 10
     const val filterHeaderBatchSize: Int = 2000
     const val filterBatchSize: Int = 100
+    const val blockConnectTimeoutMs: Long = 3_000
+    const val blockSyncTimeoutMs: Long = 30_000
+    const val blockConcurrency: Int = 10
 }

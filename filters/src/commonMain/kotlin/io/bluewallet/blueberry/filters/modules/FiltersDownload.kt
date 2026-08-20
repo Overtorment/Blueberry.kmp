@@ -42,7 +42,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
@@ -127,8 +129,7 @@ fun createFiltersDownloadModule(
 
     val stopped = AtomicBoolean(true)
     var quiet = false
-    val busy = AtomicBoolean(false)
-    var needsRun = false
+    val runRequests = Channel<Unit>(Channel.CONFLATED)
     val waiters = AtomicReference<List<CompletableDeferred<Unit>>>(emptyList())
     var unsubHeaders: (() -> Unit)? = null
     var unsubPeers: (() -> Unit)? = null
@@ -522,9 +523,8 @@ fun createFiltersDownloadModule(
         val runId = ++runSequence
         val runStartedAt = now()
         diagnosticLog("run start id=$runId")
-        try {
-            while (!isStopped()) {
-                try {
+        while (!isStopped()) {
+            try {
                     val birthday = inspectWalletBirthday(ctx.db)
                     if (birthday is WalletBirthdayInspection.Pending) {
                         ctx.bus.emit(Event.FiltersProgress, FiltersProgressPayload(now(), 0, 0))
@@ -580,37 +580,19 @@ fun createFiltersDownloadModule(
                         break
                     }
                     waitForKick(50)
-                } catch (err: Throwable) {
-                    diagnosticLog(
-                        "run failure id=$runId elapsedMs=${max(0, now() - runStartedAt)} error=${formatError(err)}",
-                    )
-                    waitForKick(idleDelayMs)
-                }
-            }
-        } finally {
-            busy.store(false)
-            if (needsRun && !isStopped()) {
-                needsRun = false
-                requestRun("start")
+            } catch (err: Throwable) {
+                diagnosticLog(
+                    "run failure id=$runId elapsedMs=${max(0, now() - runStartedAt)} error=${formatError(err)}",
+                )
+                waitForKick(idleDelayMs)
             }
         }
     }
 
     requestRun = { _ ->
-        if (isStopped()) {
-            // no-op
-        } else if (!busy.compareAndSet(false, true)) {
-            needsRun = true
+        if (!isStopped()) {
+            runRequests.trySend(Unit)
             kick()
-        } else {
-            val scope = moduleScope
-            if (scope != null) {
-                val launched = scope.launch { runDownload() }
-                loopJob = launched
-                detachLoop(ctx, "filters-download", launched)
-            } else {
-                busy.store(false)
-            }
         }
     }
 
@@ -645,6 +627,16 @@ fun createFiltersDownloadModule(
             parentJob = job
             val scope = CoroutineScope(job + Dispatchers.Default)
             moduleScope = scope
+            while (runRequests.tryReceive().isSuccess) {}
+            val launched = scope.launch {
+                while (isActive) {
+                    runRequests.receive()
+                    if (isStopped()) break
+                    runDownload()
+                }
+            }
+            loopJob = launched
+            detachLoop(ctx, "filters-download", launched)
             requestRun("start")
             ctx.bus.emit(
                 Event.ModuleStatus,
@@ -655,7 +647,6 @@ fun createFiltersDownloadModule(
         override fun stop() {
             if (isStopped()) return
             stopped.store(true)
-            needsRun = false
             unsubHeaders?.invoke()
             unsubHeaders = null
             unsubIdle?.invoke()
@@ -665,6 +656,7 @@ fun createFiltersDownloadModule(
             unsubPeers?.invoke()
             unsubPeers = null
             kick()
+            runRequests.trySend(Unit)
             runBlocking {
                 pool.closeAll()
                 loopJob?.join()

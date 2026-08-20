@@ -50,6 +50,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.concurrent.atomics.AtomicBoolean
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.concurrent.Volatile
 import kotlin.math.max
 
@@ -246,6 +248,7 @@ private class HeadersState {
     @Volatile var waitingForPeers = false
 }
 
+@OptIn(ExperimentalAtomicApi::class)
 fun createChainHeadersModule(
     ctx: ModuleContext,
     options: ChainHeadersOptions,
@@ -283,6 +286,7 @@ fun createChainHeadersModule(
     var unsubCatchup: (() -> Unit)? = null
     var unsubPeers: (() -> Unit)? = null
     var wake: (() -> Unit)? = null
+    val durableWake = AtomicBoolean(false)
     var parentJob: Job? = null
     var moduleScope: CoroutineScope? = null
     var loopJob: Job? = null
@@ -414,14 +418,23 @@ fun createChainHeadersModule(
         wake?.invoke()
     }
 
+    fun durableKick() {
+        durableWake.store(true)
+        kick()
+    }
+
     suspend fun waitForKick(ms: Long) {
         if (state.stopped) return
+        if (durableWake.exchange(false)) return
         val deferred = CompletableDeferred<Unit>()
-        wake = { deferred.complete(Unit) }
+        val complete = { deferred.complete(Unit); Unit }
+        wake = complete
+        if (durableWake.exchange(false)) complete()
         try {
             withTimeoutOrNull(ms) { deferred.await() }
         } finally {
-            if (wake != null) wake = null
+            if (wake === complete) wake = null
+            durableWake.store(false)
         }
     }
 
@@ -613,7 +626,7 @@ fun createChainHeadersModule(
             unsubIdle = ctx.bus.on(Event.SyncIdle) { state.quiet = true }
             unsubCatchup = ctx.bus.on(Event.SyncCatchup) {
                 state.quiet = false
-                kick()
+                durableKick()
             }
             unsubPeers = ctx.bus.on(Event.PeersUpdated) {
                 if (state.quiet && !state.waitingForPeers) return@on
@@ -643,7 +656,7 @@ fun createChainHeadersModule(
             unsubPeers = null
             state.waitingForPeers = false
             state.quiet = false
-            kick()
+            durableKick()
             runBlocking {
                 pool?.closeAll()
                 loopJob?.join()

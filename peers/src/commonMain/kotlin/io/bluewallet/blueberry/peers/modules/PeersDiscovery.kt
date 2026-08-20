@@ -34,6 +34,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.yield
 import kotlin.concurrent.Volatile
+import kotlin.concurrent.atomics.AtomicBoolean
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.math.ceil
 
 /** Cap for `stop()` join: wait out in-flight SQLite, not blocking DNS/connect. */
@@ -57,7 +59,7 @@ class PeersDiscoveryOptions(
     val reseedIntervalMs: Long? = null,
 )
 
-@OptIn(ExperimentalCoroutinesApi::class)
+@OptIn(ExperimentalAtomicApi::class, ExperimentalCoroutinesApi::class)
 fun createPeersDiscoveryModule(
     ctx: ModuleContext,
     options: PeersDiscoveryOptions,
@@ -81,6 +83,7 @@ fun createPeersDiscoveryModule(
     var unsubCatchup: (() -> Unit)? = null
     var unsubPeers: (() -> Unit)? = null
     var wake: (() -> Unit)? = null
+    val durableWake = AtomicBoolean(false)
     var lastReseedAt = 0L
     var dnsInFlight = false
     val inflight = mutableSetOf<String>()
@@ -91,12 +94,17 @@ fun createPeersDiscoveryModule(
         wake?.invoke()
     }
 
+    fun durableKick() {
+        durableWake.store(true)
+        kick()
+    }
+
     fun refreshPause() {
         val wantPause = state.syncIdle && ctx.db.peers.listAlive().isNotEmpty()
         if (wantPause == state.paused) return
         state.paused = wantPause
         log("peers-discovery", if (state.paused) "pause" else "resume")
-        kick()
+        durableKick()
     }
 
     fun emitUpdated() {
@@ -125,27 +133,16 @@ fun createPeersDiscoveryModule(
 
     suspend fun waitForKick(ms: Long) {
         if (state.stopped) return
-        val moduleScope = scope ?: return
+        if (durableWake.exchange(false)) return
         val done = CompletableDeferred<Unit>()
-        var settled = false
-        lateinit var complete: () -> Unit
-        val timer = moduleScope.launch {
-            delay(ms)
-            complete()
-        }
-        complete = fun() {
-            if (settled) return
-            settled = true
-            timer.cancel()
-            if (wake === complete) wake = null
-            done.complete(Unit)
-        }
+        val complete = { done.complete(Unit); Unit }
         wake = complete
+        if (durableWake.exchange(false)) complete()
         try {
-            done.await()
-        } catch (e: CancellationException) {
-            complete()
-            throw e
+            withTimeoutOrNull(ms) { done.await() }
+        } finally {
+            if (wake === complete) wake = null
+            durableWake.store(false)
         }
     }
 
