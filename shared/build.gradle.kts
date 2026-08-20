@@ -57,6 +57,9 @@ kotlin {
             implementation(project(":storage"))
             implementation(project(":wallet"))
             implementation(project(":bus"))
+            implementation(project(":peers"))
+            implementation(project(":headers"))
+            implementation(project(":filters"))
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.material3)
@@ -73,6 +76,7 @@ kotlin {
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
+            implementation(libs.kotlinx.coroutines.core)
         }
         getByName("androidHostTest").dependencies {
             implementation(libs.sqldelight.sqlite.driver)

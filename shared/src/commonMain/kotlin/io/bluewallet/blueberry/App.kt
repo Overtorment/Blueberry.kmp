@@ -6,6 +6,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.tooling.preview.Preview
 import io.bluewallet.blueberry.boot.OnboardingGate
@@ -21,10 +22,17 @@ import io.bluewallet.blueberry.onboarding.persistSyncYear
 import io.bluewallet.blueberry.storage.Database
 import io.bluewallet.blueberry.storage.createSqliteDatabase
 import io.bluewallet.blueberry.wallet.inspectWalletSecret
+import kotlin.concurrent.Volatile
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private class OpenedDatabase(path: String) {
     val result: Result<Database> = runCatching { createSqliteDatabase(path) }
+    @Volatile private var closed = false
     fun close() {
+        if (closed) return
+        closed = true
         result.getOrNull()?.close()
     }
 }
@@ -53,20 +61,40 @@ fun App(databasePath: String) {
         fun refreshGate() {
             gate = resolveOnboardingGate(inspectWalletSecret(db), inspectSyncFromYear(db))
         }
+        val started = gate is OnboardingGate.Start
+        val runtime = remember(databasePath, session, started) {
+            if (started) PeersRuntime(db) else null
+        }
+        val scope = rememberCoroutineScope()
+        DisposableEffect(runtime) {
+            val job = scope.launch { runtime?.start() }
+            onDispose {
+                job.cancel()
+                runtime?.stop()
+            }
+        }
         if (showSettings) {
             SettingsScreen(
                 onClearStorage = {
-                    opened.close()
-                    deleteSqliteDatabaseFiles(databasePath)
-                    showSettings = false
-                    session += 1
+                    scope.launch {
+                        withContext(Dispatchers.Default) { runtime?.stop() }
+                        opened.close()
+                        deleteSqliteDatabaseFiles(databasePath)
+                        showSettings = false
+                        session += 1
+                    }
                 },
                 onBack = { showSettings = false },
             )
             return@MaterialTheme
         }
         when (val current = gate) {
-            is OnboardingGate.Start -> ClickMeContent(onOpenSettings = { showSettings = true })
+            is OnboardingGate.Start -> PeersScreen(
+                store = checkNotNull(runtime).store,
+                headersStore = checkNotNull(runtime).headersStore,
+                filtersStore = checkNotNull(runtime).filtersStore,
+                onOpenSettings = { showSettings = true },
+            )
             is OnboardingGate.ExitInvalid -> InvalidSecretScreen(current.detail)
             is OnboardingGate.Onboard -> OnboardingApp(
                 startAtYearStep = current.startAtYearStep,
